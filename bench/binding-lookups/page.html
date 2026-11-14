@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline'; connect-src 'none'">
+<title>Binding lookup benchmark</title>
+<style>
+:root{color-scheme:light dark;font:16px/1.5 system-ui,sans-serif}body{max-width:1100px;margin:40px auto;padding:0 24px}h1{font-size:1.8rem}p{max-width:85ch}form{display:flex;flex-wrap:wrap;gap:16px;align-items:end;margin:24px 0}label{display:block;font-size:.9rem}input,button{font:inherit;padding:7px;border:1px solid #888;border-radius:5px}input{width:7em}button{cursor:pointer}button:disabled{cursor:default;opacity:.5}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{padding:8px;text-align:right;border-bottom:1px solid #8886}th:first-child,td:first-child{text-align:left}caption{text-align:left;margin:12px 0}.scroll{overflow:auto}pre{white-space:pre-wrap;font:13px/1.5 ui-monospace,monospace}summary{cursor:pointer}.muted{opacity:.75}#status{min-height:1.5em}.current{background:#489b6318}
+</style>
+<h1>Binding location lookups</h1>
+<p>Compare the queries at <strong>8907303</strong> with <strong>73e2aea (v0.12.0)</strong>.
+Both stores use their complete storage migration and initialization SQL. Everything is synthetic and runs in memory.
+This file contains SQLite WASM and all SQL: double-click it, with no server or network.</p>
+<form id="controls">
+<div><label for="size1">Unrelated bindings: small</label><input id="size1" type="number" min="1" max="1000000" value="1000" required></div>
+<div><label for="size2">Medium</label><input id="size2" type="number" min="1" max="1000000" value="10000" required></div>
+<div><label for="size3">Large</label><input id="size3" type="number" min="1" max="1000000" value="50000" required></div>
+<div><label for="collections">Collections</label><input id="collections" type="number" min="2" max="1000" value="8" required></div>
+<div><label for="pending">Pending identities</label><input id="pending" type="number" min="1" max="2000" value="32" required></div>
+<button id="run">Run three sizes</button><button id="cancel" type="button" disabled>Cancel</button>
+</form>
+<p class="muted">Each pending identity adds two bindings: a tombstone with a settled base in c0 and a pending create in c1.
+Unrelated identities share the same source and alternate between present and absent bases.
+Time is the median of 31 warm executions of one lookup, excluding prepare and bind. VM steps and full-scan steps
+are SQLite statement counters, not estimates. “Pending batch” runs one lookup for every pending identity;
+it measures the lookup loop, not the complete Rust placement read. Data creation is excluded.
+A zero time means the lookup fell below the browser's clock precision; use the VM-step counter to compare small costs.</p>
+<p id="status" role="status">Ready. SQLite 3.54.1, matching the crate's bundled SQLite version.</p>
+<div class="scroll"><table>
+<caption>Lookup cost as unrelated bindings grow</caption>
+<thead><tr><th>Version / query</th><th>Unrelated</th><th>ms / lookup</th><th>VM steps</th><th>Full-scan steps</th><th>Pending batch ms</th></tr></thead>
+<tbody id="results"></tbody></table></div>
+<details><summary>Query plans and results</summary><pre id="plans"></pre></details>
+<details><summary>Embedded SQL snapshots</summary><pre id="sql"></pre></details>
+<p class="muted">SQLite WASM: @sqlite.org/sqlite-wasm 3.54.1-build1. SQLite is public domain; the included JavaScript glue retains its license notices. Source, rebuild instructions and measurement notes accompany this page.</p>
+<script id="snapshots" type="application/json">@@SNAPSHOTS@@</script>
+<script id="worker-source" type="text/plain">
+@@RUNTIME@@
+@@CORE@@
+const binary = Uint8Array.from(atob('@@WASM@@'), c => c.charCodeAt(0));
+self.onmessage = async ({data}) => {
+  try {
+    const sqlite = await BindingSQLite.default({wasmBinary: binary});
+    self.postMessage({type:'version', version:sqlite.capi.sqlite3_libversion()});
+    for (const size of data.sizes) {
+      for (const snapshot of data.snapshots) {
+        for (const result of BindingBench.run(sqlite, snapshot, size, data.collections, data.pending))
+          self.postMessage({type:'result', result});
+      }
+    }
+    self.postMessage({type:'done'});
+  } catch(error) { self.postMessage({type:'error', message:error.stack || String(error)}); }
+};
+</script>
+<script>
+const snapshots = JSON.parse(document.querySelector('#snapshots').textContent);
+const element = id => document.getElementById(id);
+let worker;
+window.benchResults = [];
+window.benchState = 'ready';
+element('sql').textContent = snapshots.map(s => `${s.name} ${s.revision}\n${s.schema}\n${s.init}\n${s.origin}\n${s.destination}`).join('\n\n');
+function finish(state, message) {
+  worker?.terminate(); worker = null;
+  element('run').disabled = false; element('cancel').disabled = true;
+  element('status').textContent = message; window.benchState = state;
+}
+element('controls').onsubmit = event => {
+  event.preventDefault();
+  const ids = ['size1','size2','size3','collections','pending'];
+  const values = ids.map(id => Number(element(id).value));
+  if (values.some(n => !Number.isSafeInteger(n)) || !event.target.reportValidity()) return;
+  window.benchResults = []; window.benchState = 'running';
+  element('results').replaceChildren(); element('plans').textContent = '';
+  element('run').disabled = true; element('cancel').disabled = false;
+  element('status').textContent = 'Building synthetic stores and measuring…';
+  const url = URL.createObjectURL(new Blob([element('worker-source').textContent], {type:'text/javascript'}));
+  worker = new Worker(url); URL.revokeObjectURL(url);
+  worker.onerror = event => finish('error', event.message);
+  worker.onmessage = ({data}) => {
+    if (data.type === 'version') element('status').textContent = `SQLite ${data.version}: measuring…`;
+    if (data.type === 'result') {
+      const r = data.result; window.benchResults.push(r);
+      const row = element('results').insertRow(); row.className = r.version;
+      for (const text of [`${r.version} / ${r.query}`,r.size.toLocaleString(),r.ms.toFixed(4),r.steps.toLocaleString(),r.scans.toLocaleString(),r.batchMs.toFixed(3)])
+        row.insertCell().textContent = text;
+      element('plans').textContent += `${r.version} / ${r.query}, ${r.size} unrelated\n${r.plan.join('\n')}\nResult: ${JSON.stringify(r.result)}\n\n`;
+    }
+    if (data.type === 'done') finish('done', 'Finished. Expand query plans to inspect the indexed seeks and old scans.');
+    if (data.type === 'error') finish('error', data.message);
+  };
+  worker.postMessage({snapshots,sizes:values.slice(0,3),collections:values[3],pending:values[4]});
+};
+element('cancel').onclick = () => finish('cancelled', 'Cancelled. All in-memory stores were discarded.');
+</script>
+</html>

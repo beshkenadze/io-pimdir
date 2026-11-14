@@ -1547,3 +1547,13 @@ Storage-draft-11 states the restore as the crate runs it (STORAGE §8): bodies m
 
 ### Requirement: A write ensures a collection once and reads a handle's link once
 `write::apply` SHALL run `ensure_collection` once per collection of a batch, and SHALL read the link an upserted handle is bound to once, before any binding of the batch is written, handing it to the read of the hub the batch touches (`batch_links`) rather than looking it up again (the audit's line P4). A load resolves its handles one statement each: no canonical statement reads the links of a slot of handles, and the crate adds no statement text of its own for it.
+
+### Requirement: Binding lookup performance is reproducible offline
+
+A synthetic benchmark SHALL run old and current binding location statements
+against their real storage migrations, show time and VM steps across three sizes,
+and open from a local HTML file without a server or network.
+
+`bench/binding-lookups/index.html` embeds SQLite WASM and both SQL snapshots.
+Its verification checks current lookup costs against a VM-step bound while
+unrelated bindings grow, old scan growth, query results and offline execution.
