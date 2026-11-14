@@ -7,9 +7,15 @@ Double-click `index.html`, or open it from the browser's file menu. It is a
 single self-contained page: SQLite WASM, its JavaScript runtime, both complete
 storage migrations and initialization statements, and both pairs of queries
 are inline. Opening it needs no server, network, Bun, or installed SQLite.
-Choose three unrelated-binding sizes, collection count, and pending identity
-count, then press **Run three sizes**. **Cancel** terminates its worker and
-releases the in-memory stores.
+The page states the bug in plain words; press **Run**. It measures stores of
+1,000, 10,000, 50,000 and 200,000 bindings, shows progress, then draws work per
+lookup (SQLite steps) against store size (those bindings plus two per pending
+message) for both versions, writes a verdict
+from the numbers, and estimates a folder's lookup time from its pending
+messages and store size. **Change store sizes** holds the four sizes, folder
+count and pending count. **Cancel** terminates its worker and releases the
+in-memory stores. Raw numbers, query plans and the embedded SQL are under
+**Details**.
 
 ## Measurement
 
@@ -123,7 +129,9 @@ The committed page was opened as `file://` in headless Chrome 157 with
 Playwright 1.58.2 and the browser context offline. It passed:
 
 - Embedded SQL equals source; old fixtures equal `8907303` byte for byte.
-- Three sizes including 200k, with correct lookup results.
+- The four default sizes including 200k run with one click, with correct lookup results.
+- After a run the chart has both lines and a point per size, the verdict matches the counters, and the estimate is filled in.
+- Equal sizes still give an estimate; an invalid size hidden in the folded controls is shown, not ignored.
 - Old VM-step growth is exactly 11 per unrelated binding for origin and 6 for destination.
 - Current lookups stay below 250 VM steps with zero full-scan steps and indexed plans.
 - Custom collection and pending counts, repeat runs, and cancellation work.
@@ -137,6 +145,7 @@ bun add --cwd "$bench_tools" playwright@1.58.2
 bun "$bench_tools/node_modules/playwright/cli.js" install chromium
 bun bench/binding-lookups/verify.mjs "$bench_tools/node_modules/playwright/index.mjs"
 # Optional final argument: an existing Chrome executable.
+# Optional: SCREENSHOTS=<dir> saves light and dark screenshots after the default run.
 trash "$bench_tools"
 ```
 

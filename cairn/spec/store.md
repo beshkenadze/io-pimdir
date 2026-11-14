@@ -1551,8 +1551,12 @@ Storage-draft-11 states the restore as the crate runs it (STORAGE §8): bodies m
 ### Requirement: Binding lookup performance is reproducible offline
 
 A synthetic benchmark SHALL run old and current binding location statements
-against their real storage migrations, show time and VM steps across three sizes,
-and open from a local HTML file without a server or network.
+against their real storage migrations, show time and VM steps across four sizes,
+and open from a local HTML file without a server or network. The page SHALL state
+the bug in plain words, measure with one Run button and default sizes, chart work
+per lookup against store size for both versions, state a verdict computed from the
+measurements, estimate a folder's read time from pending messages and store size,
+and keep raw numbers, plans and SQL in a collapsed details section.
 
 `bench/binding-lookups/index.html` embeds SQLite WASM and both SQL snapshots.
 Its verification checks current lookup costs against a VM-step bound while

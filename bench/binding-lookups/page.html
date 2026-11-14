@@ -3,35 +3,89 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; worker-src blob:; style-src 'unsafe-inline'; connect-src 'none'">
-<title>Binding lookup benchmark</title>
+<title>One lookup read the whole store</title>
 <style>
-:root{color-scheme:light dark;font:16px/1.5 system-ui,sans-serif}body{max-width:1100px;margin:40px auto;padding:0 24px}h1{font-size:1.8rem}p{max-width:85ch}form{display:flex;flex-wrap:wrap;gap:16px;align-items:end;margin:24px 0}label{display:block;font-size:.9rem}input,button{font:inherit;padding:7px;border:1px solid #888;border-radius:5px}input{width:7em}button{cursor:pointer}button:disabled{cursor:default;opacity:.5}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{padding:8px;text-align:right;border-bottom:1px solid #8886}th:first-child,td:first-child{text-align:left}caption{text-align:left;margin:12px 0}.scroll{overflow:auto}pre{white-space:pre-wrap;font:13px/1.5 ui-monospace,monospace}summary{cursor:pointer}.muted{opacity:.75}#status{min-height:1.5em}.current{background:#489b6318}
+:root{color-scheme:light;--bg:#fcfcfb;--text:#0b0b0b;--text-2:#52514e;--rule:#d9d8d4;--grid:#ecebe7;--old:#eb6834;--current:#2a78d6;--panel:#f3f2ef;font:16px/1.5 system-ui,sans-serif}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#1a1a19;--text:#f0efec;--text-2:#c3c2b7;--rule:#45443f;--grid:#2c2c2a;--old:#d95926;--current:#3987e5;--panel:#242422}}
+body{max-width:860px;margin:32px auto;padding:0 20px;background:var(--bg);color:var(--text)}
+h1{font-size:1.9rem;line-height:1.2;margin:0 0 12px}h2{font-size:1.25rem;margin:40px 0 8px}
+p{max-width:72ch}.lede{font-size:1.1rem}.muted{color:var(--text-2)}
+.run{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:24px 0 8px}
+input,button{font:inherit;padding:7px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--text)}
+input{width:8em;font-variant-numeric:tabular-nums}button{cursor:pointer}button:disabled{cursor:default;opacity:.5}
+#run{font-size:1.1rem;font-weight:600;padding:10px 28px;background:var(--text);color:var(--bg);border-color:var(--text)}
+label{display:block;font-size:.9rem;color:var(--text-2)}.fields{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}
+progress{width:100%;height:8px;accent-color:var(--current)}#status{min-height:1.5em;margin:4px 0}
+#status.done{font-weight:600}
+.chart{background:var(--panel);border-radius:10px;padding:12px 8px 4px}.chart svg{display:block;width:100%;height:auto}
+.legend{display:flex;gap:20px;margin:0 0 4px 12px;font-size:.9rem;color:var(--text-2)}
+.legend span::before{content:"";display:inline-block;width:18px;height:3px;margin:0 6px 4px 0;background:var(--c);vertical-align:middle}
+svg text{fill:var(--text-2);font:13px system-ui,sans-serif}svg .label{fill:var(--text);font-weight:600}
+svg .axis{stroke:var(--text-2);stroke-width:1}svg .grid{stroke:var(--grid);stroke-width:1}
+#verdict{font-size:1.15rem;font-weight:600;min-height:1.5em}
+.calc{background:var(--panel);border-radius:10px;padding:12px 16px}.estimates{display:flex;flex-wrap:wrap;gap:32px;margin:8px 0}
+.estimates strong{display:block;font-size:1.8rem;font-variant-numeric:tabular-nums}
+.key{border-left:4px solid var(--c);padding-left:10px}
+summary{cursor:pointer;font-weight:600}details{margin:12px 0}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:.9rem}th,td{padding:6px 8px;text-align:right;border-bottom:1px solid var(--rule)}
+th:first-child,td:first-child{text-align:left}.scroll{overflow:auto}pre{white-space:pre-wrap;font:13px/1.5 ui-monospace,monospace}
 </style>
-<h1>Binding location lookups</h1>
-<p>Compare the queries at <strong>8907303</strong> with <strong>73e2aea (v0.12.0)</strong>.
-Both stores use their complete storage migration and initialization SQL. Everything is synthetic and runs in memory.
-This file contains SQLite WASM and all SQL: double-click it, with no server or network.</p>
-<form id="controls">
-<div><label for="size1">Unrelated bindings: small</label><input id="size1" type="number" min="1" max="1000000" value="1000" required></div>
-<div><label for="size2">Medium</label><input id="size2" type="number" min="1" max="1000000" value="10000" required></div>
-<div><label for="size3">Large</label><input id="size3" type="number" min="1" max="1000000" value="50000" required></div>
-<div><label for="collections">Collections</label><input id="collections" type="number" min="2" max="1000" value="8" required></div>
-<div><label for="pending">Pending identities</label><input id="pending" type="number" min="1" max="2000" value="32" required></div>
-<button id="run">Run three sizes</button><button id="cancel" type="button" disabled>Cancel</button>
+<h1>One lookup read the whole store</h1>
+<p class="lede">The mail store keeps one record, a <em>binding</em>, for each message in each folder.
+To find where one pending message came from, the old code read <strong>every</strong> binding in the store to find one row.
+It did that once for each pending message, so the time grew with store size times pending messages:
+a folder with a few hundred pending messages in a store of about 175,000 bindings took 44&nbsp;s to read instead of 0.4&nbsp;s.</p>
+<p>The current version (v0.12.0) jumps straight to the right row through an index.
+Press Run to measure both versions here, in this tab. Everything is synthetic; nothing leaves your computer.</p>
+
+<form id="controls" novalidate>
+<div class="run"><button id="run">Run</button><button id="cancel" type="button" disabled>Cancel</button>
+<span class="muted">Builds stores of 1,000 to 200,000 bindings. Takes about 15 seconds.</span></div>
+<progress id="progress" value="0" max="1" hidden></progress>
+<p id="status" role="status">Ready.</p>
+<details id="advanced"><summary>Change store sizes</summary>
+<div class="fields">
+<div><label for="size1">Size 1 (other bindings)</label><input id="size1" type="number" min="1" max="1000000" value="1000" required></div>
+<div><label for="size2">Size 2</label><input id="size2" type="number" min="1" max="1000000" value="10000" required></div>
+<div><label for="size3">Size 3</label><input id="size3" type="number" min="1" max="1000000" value="50000" required></div>
+<div><label for="size4">Size 4</label><input id="size4" type="number" min="1" max="1000000" value="200000" required></div>
+<div><label for="collections">Folders</label><input id="collections" type="number" min="2" max="1000" value="8" required></div>
+<div><label for="pending">Pending messages</label><input id="pending" type="number" min="1" max="2000" value="32" required></div>
+</div></details>
 </form>
-<p class="muted">Each pending identity adds two bindings: a tombstone with a settled base in c0 and a pending create in c1.
-Unrelated identities share the same source and alternate between present and absent bases.
-Time is the median of 31 warm executions of one lookup, excluding prepare and bind. VM steps and full-scan steps
-are SQLite statement counters, not estimates. “Pending batch” runs one lookup for every pending identity;
-it measures the lookup loop, not the complete Rust placement read. Data creation is excluded.
-A zero time means the lookup fell below the browser's clock precision; use the VM-step counter to compare small costs.</p>
-<p id="status" role="status">Ready. SQLite 3.54.1, matching the crate's bundled SQLite version.</p>
+
+<h2>Work for one lookup as the store grows</h2>
+<div class="legend"><span style="--c:var(--old)">Old version</span><span style="--c:var(--current)">Current version</span></div>
+<div class="chart"><svg id="chart" viewBox="0 0 720 380" role="img" aria-labelledby="verdict"></svg></div>
+<p id="verdict" aria-live="polite"></p>
+
+<h2>What this means for a real folder</h2>
+<div class="calc">
+<div class="fields">
+<div><label for="calc-store">Bindings in the store</label><input id="calc-store" type="number" min="1" value="175000"></div>
+<div><label for="calc-pending">Pending messages in the folder</label><input id="calc-pending" type="number" min="1" value="300"></div>
+</div>
+<div class="estimates">
+<div class="key" style="--c:var(--old)">Old version<strong id="calc-old">–</strong></div>
+<div class="key" style="--c:var(--current)">Current version<strong id="calc-current">–</strong></div>
+</div>
+<p id="calc-note" class="muted">Run the measurement to fill in the estimate.</p>
+</div>
+
+<h2>Details</h2>
+<details><summary>Raw numbers</summary>
+<p class="muted">Old is crate commit <strong>8907303</strong>; current is <strong>73e2aea (v0.12.0)</strong>.
+Both stores use their complete storage migration and initialization SQL, with SQLite 3.54.1, the version the crate bundles.
+The chart shows the origin lookup; the destination lookup behaves the same way. Each pending message adds two bindings
+to the size you chose: a tombstone with a settled base in c0 and a pending create in c1. Other bindings share the same source and
+alternate between present and absent bases. Time is the median of 31 warm runs of one lookup, without prepare and bind.
+VM steps and full-scan steps are SQLite statement counters, not estimates. “Batch” runs one lookup for every pending message.
+A zero time means the lookup was faster than the browser's clock can measure; the step counter is still exact.</p>
 <div class="scroll"><table>
-<caption>Lookup cost as unrelated bindings grow</caption>
-<thead><tr><th>Version / query</th><th>Unrelated</th><th>ms / lookup</th><th>VM steps</th><th>Full-scan steps</th><th>Pending batch ms</th></tr></thead>
-<tbody id="results"></tbody></table></div>
+<thead><tr><th>Version / query</th><th>Bindings</th><th>ms / lookup</th><th>VM steps</th><th>Full-scan steps</th><th>Batch ms</th></tr></thead>
+<tbody id="results"></tbody></table></div></details>
 <details><summary>Query plans and results</summary><pre id="plans"></pre></details>
-<details><summary>Embedded SQL snapshots</summary><pre id="sql"></pre></details>
+<details><summary>Embedded SQL</summary><pre id="sql"></pre></details>
 <p class="muted">SQLite WASM: @sqlite.org/sqlite-wasm 3.54.1-build1. SQLite is public domain; the included JavaScript glue retains its license notices. Source, rebuild instructions and measurement notes accompany this page.</p>
 <script id="snapshots" type="application/json">@@SNAPSHOTS@@</script>
 <script id="worker-source" type="text/plain">
@@ -44,6 +98,7 @@ self.onmessage = async ({data}) => {
     self.postMessage({type:'version', version:sqlite.capi.sqlite3_libversion()});
     for (const size of data.sizes) {
       for (const snapshot of data.snapshots) {
+        self.postMessage({type:'start', size, version:snapshot.name});
         for (const result of BindingBench.run(sqlite, snapshot, size, data.collections, data.pending))
           self.postMessage({type:'result', result});
       }
@@ -55,41 +110,156 @@ self.onmessage = async ({data}) => {
 <script>
 const snapshots = JSON.parse(document.querySelector('#snapshots').textContent);
 const element = id => document.getElementById(id);
-let worker;
+const count = n => Math.round(n).toLocaleString('en-US');
+const compact = n => n.toLocaleString('en-US', {notation:'compact', maximumFractionDigits:1});
+const VERSION_NAME = {old:'old version', current:'current version'};
+let worker, started, stores, storesDone;
 window.benchResults = [];
 window.benchState = 'ready';
 element('sql').textContent = snapshots.map(s => `${s.name} ${s.revision}\n${s.schema}\n${s.init}\n${s.origin}\n${s.destination}`).join('\n\n');
+
+// Store size as the reader sees it: the chosen bindings plus two per pending message.
+const total = r => r.size + 2 * r.pending;
+const origin = version => window.benchResults.filter(r => r.query === 'origin' && r.version === version)
+  .sort((a, b) => a.size - b.size);
+
+function niceStep(max, ticks) {
+  const raw = max / ticks, power = 10 ** Math.floor(Math.log10(raw));
+  return power * ([1, 2, 5, 10].find(m => m * power >= raw));
+}
+
+function svg(tag, attributes, text) {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function drawChart() {
+  const chart = element('chart'), W = 720, H = 380, left = 72, right = 24, top = 24, bottom = 56;
+  const old = origin('old'), current = origin('current');
+  const sizes = [...old, ...current].map(total);
+  const nodes = [];
+  if (!sizes.length) {
+    nodes.push(svg('text', {x:W/2, y:H/2, 'text-anchor':'middle'}, 'Press Run: the result appears here.'));
+    chart.replaceChildren(...nodes); return;
+  }
+  const xMax = Math.max(...sizes), xStep = niceStep(xMax, 4);
+  const yStep = niceStep(Math.max(100, ...old.map(r => r.steps), ...current.map(r => r.steps)), 5);
+  const yMax = Math.ceil(Math.max(100, ...old.map(r => r.steps), ...current.map(r => r.steps)) / yStep) * yStep;
+  const x = v => left + v / xMax * (W - left - right), y = v => H - bottom - v / yMax * (H - top - bottom);
+  for (let v = 0; v <= yMax; v += yStep) {
+    nodes.push(svg('line', {class:v ? 'grid' : 'axis', x1:left, x2:W - right, y1:y(v), y2:y(v)}));
+    nodes.push(svg('text', {x:left - 8, y:y(v) + 4, 'text-anchor':'end'}, compact(v)));
+  }
+  for (let v = 0; v <= xMax; v += xStep)
+    nodes.push(svg('text', {x:x(v), y:H - bottom + 20, 'text-anchor':'middle'}, compact(v)));
+  nodes.push(svg('text', {x:(left + W - right) / 2, y:H - 10, 'text-anchor':'middle'}, 'Bindings in the store'));
+  nodes.push(svg('text', {x:16, y:(top + H - bottom) / 2, 'text-anchor':'middle',
+    transform:`rotate(-90 16 ${(top + H - bottom) / 2})`}, 'Work per lookup (SQLite steps)'));
+  for (const [version, rows] of [['old', old], ['current', current]]) {
+    if (!rows.length) continue;
+    const colour = `var(--${version})`;
+    nodes.push(svg('polyline', {fill:'none', stroke:colour, 'stroke-width':2.5, 'stroke-linejoin':'round',
+      points:rows.map(r => `${x(total(r))},${y(r.steps)}`).join(' ')}));
+    for (const r of rows) {
+      const dot = svg('circle', {cx:x(total(r)), cy:y(r.steps), r:4.5, fill:colour, stroke:'var(--panel)', 'stroke-width':2});
+      dot.append(svg('title', {}, `${VERSION_NAME[version]}: ${count(r.steps)} steps at ${count(total(r))} bindings`));
+      nodes.push(dot);
+    }
+    const last = rows.at(-1);
+    const text = version === 'old'
+      ? `Old: ${count(last.steps)} steps`
+      : `Current: ${count(last.steps)} steps at every size`;
+    nodes.push(svg('text', {class:'label', x:x(total(last)) - 10, y:y(last.steps) - 12, 'text-anchor':'end'}, text));
+  }
+  chart.replaceChildren(...nodes);
+}
+
+function writeVerdict() {
+  const old = origin('old').at(-1), current = origin('current').at(-1);
+  if (!old || !current || old.size !== current.size) { element('verdict').textContent = ''; return; }
+  element('verdict').textContent = `At ${count(total(old))} bindings the old lookup does ${count(old.steps)} steps; ` +
+    `the current one does ${count(current.steps)}: ${count(old.steps / current.steps)} times less work.`;
+}
+
+// Per-lookup time from the batch (one lookup per pending message), which is above clock precision.
+const perLookup = r => r.batchMs / r.pending;
+
+function duration(ms) {
+  if (ms >= 1000) return (ms / 1000).toLocaleString('en-US', {maximumFractionDigits:1}) + ' s';
+  return ms.toLocaleString('en-US', {maximumSignificantDigits:2}) + ' ms';
+}
+
+function updateCalculator() {
+  const old = origin('old'), current = origin('current');
+  const store = Number(element('calc-store').value), pending = Number(element('calc-pending').value);
+  if (window.benchState !== 'done' || old.length < 2 || !current.length || !(store > 0) || !(pending > 0)) {
+    element('calc-old').textContent = element('calc-current').textContent = '–'; return;
+  }
+  // Old time grows in a straight line with store size: least-squares fit through the measured points.
+  const xs = old.map(total), ys = old.map(perLookup), n = xs.length;
+  const mx = xs.reduce((a, b) => a + b) / n, my = ys.reduce((a, b) => a + b) / n;
+  const spread = xs.reduce((s, xv) => s + (xv - mx) ** 2, 0);
+  const slope = spread ? xs.reduce((s, xv, i) => s + (xv - mx) * (ys[i] - my), 0) / spread : 0;
+  const oldMs = pending * Math.max(0, my + slope * (store - mx));
+  const currentMs = pending * current.reduce((s, r) => s + perLookup(r), 0) / current.length;
+  element('calc-old').textContent = duration(oldMs);
+  element('calc-current').textContent = duration(currentMs);
+  element('calc-note').textContent = `Estimate: ${count(pending)} lookups, one per pending message, at the times measured above in this browser. ` +
+    'It covers the lookup only, not the rest of the folder read. The real report above: 44 s before the fix, 0.4 s after.';
+}
+
 function finish(state, message) {
   worker?.terminate(); worker = null;
   element('run').disabled = false; element('cancel').disabled = true;
-  element('status').textContent = message; window.benchState = state;
+  element('progress').hidden = state !== 'done';
+  element('status').textContent = message; element('status').className = state;
+  window.benchState = state;
+  updateCalculator();
 }
+
 element('controls').onsubmit = event => {
   event.preventDefault();
-  const ids = ['size1','size2','size3','collections','pending'];
+  const ids = ['size1','size2','size3','size4','collections','pending'];
   const values = ids.map(id => Number(element(id).value));
-  if (values.some(n => !Number.isSafeInteger(n)) || !event.target.reportValidity()) return;
+  if (!event.target.checkValidity()) { element('advanced').open = true; event.target.reportValidity(); return; }
+  if (values.some(n => !Number.isSafeInteger(n))) return;
+  const sizes = values.slice(0, 4);
   window.benchResults = []; window.benchState = 'running';
-  element('results').replaceChildren(); element('plans').textContent = '';
+  element('results').replaceChildren(); element('plans').textContent = ''; element('verdict').textContent = '';
+  drawChart(); updateCalculator();
   element('run').disabled = true; element('cancel').disabled = false;
-  element('status').textContent = 'Building synthetic stores and measuring…';
+  stores = sizes.length * snapshots.length; storesDone = 0; started = performance.now();
+  Object.assign(element('progress'), {hidden:false, value:0, max:stores});
+  element('status').className = 'running';
+  element('status').textContent = 'Starting SQLite…';
   const url = URL.createObjectURL(new Blob([element('worker-source').textContent], {type:'text/javascript'}));
   worker = new Worker(url); URL.revokeObjectURL(url);
   worker.onerror = event => finish('error', event.message);
   worker.onmessage = ({data}) => {
-    if (data.type === 'version') element('status').textContent = `SQLite ${data.version}: measuring…`;
+    if (data.type === 'start')
+      element('status').textContent = `Measuring the ${VERSION_NAME[data.version]} with ${count(data.size)} bindings ` +
+        `(store ${storesDone + 1} of ${stores})…`;
     if (data.type === 'result') {
       const r = data.result; window.benchResults.push(r);
-      const row = element('results').insertRow(); row.className = r.version;
-      for (const text of [`${r.version} / ${r.query}`,r.size.toLocaleString(),r.ms.toFixed(4),r.steps.toLocaleString(),r.scans.toLocaleString(),r.batchMs.toFixed(3)])
+      const row = element('results').insertRow();
+      for (const text of [`${r.version} / ${r.query}`, count(total(r)), r.ms.toFixed(4), count(r.steps), count(r.scans), r.batchMs.toFixed(3)])
         row.insertCell().textContent = text;
-      element('plans').textContent += `${r.version} / ${r.query}, ${r.size} unrelated\n${r.plan.join('\n')}\nResult: ${JSON.stringify(r.result)}\n\n`;
+      element('plans').textContent += `${r.version} / ${r.query}, ${total(r)} bindings\n${r.plan.join('\n')}\nResult: ${JSON.stringify(r.result)}\n\n`;
+      if (r.query === 'destination') element('progress').value = ++storesDone;
+      drawChart(); writeVerdict();
     }
-    if (data.type === 'done') finish('done', 'Finished. Expand query plans to inspect the indexed seeks and old scans.');
-    if (data.type === 'error') finish('error', data.message);
+    if (data.type === 'done') {
+      const seconds = ((performance.now() - started) / 1000).toFixed(0);
+      finish('done', `Done in ${seconds} s. The chart, the sentence under it and the estimate below use these results.`);
+    }
+    if (data.type === 'error') finish('error', 'Failed: ' + data.message);
   };
-  worker.postMessage({snapshots,sizes:values.slice(0,3),collections:values[3],pending:values[4]});
+  worker.postMessage({snapshots, sizes, collections:values[4], pending:values[5]});
 };
 element('cancel').onclick = () => finish('cancelled', 'Cancelled. All in-memory stores were discarded.');
+element('calc-store').oninput = element('calc-pending').oninput = updateCalculator;
+drawChart();
 </script>
 </html>
