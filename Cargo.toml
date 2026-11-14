@@ -15,6 +15,7 @@ exclude = [
   ".github/",
   "AGENTS.md",
   "CLAUDE.md",
+  "bench/",
   "cairn/",
   "default.nix",
   "deny.toml",

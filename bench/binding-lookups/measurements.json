@@ -1,0 +1,351 @@
+{
+  "sqlite": "3.54.1",
+  "repetitions": 31,
+  "timing": "median warm in-memory milliseconds, excluding prepare and bind",
+  "results": [
+    {
+      "version": "old",
+      "query": "origin",
+      "size": 1000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 10.783582999999993,
+      "ms": 0.29683399999998983,
+      "steps": 11733,
+      "scans": 1063,
+      "result": [
+        [
+          "c0",
+          "real-1001"
+        ]
+      ],
+      "plan": [
+        "SCAN bindings",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "old",
+      "query": "destination",
+      "size": 1000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 3.971416000000005,
+      "ms": 0.11416700000000901,
+      "steps": 6425,
+      "scans": 1063,
+      "result": [
+        [
+          "c1",
+          "\u0001key-0"
+        ]
+      ],
+      "plan": [
+        "SCAN bindings",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "current",
+      "query": "origin",
+      "size": 1000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 0.9772909999999797,
+      "ms": 0.00899999999998613,
+      "steps": 92,
+      "scans": 0,
+      "result": [
+        [
+          "c0",
+          "real-1001"
+        ]
+      ],
+      "plan": [
+        "SEARCH i USING COVERING INDEX items_by_link (link_id=?)",
+        "SEARCH b USING INDEX sqlite_autoindex_bindings_1 (item=? AND source=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "current",
+      "query": "destination",
+      "size": 1000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 0.43924999999998704,
+      "ms": 0.007167000000009693,
+      "steps": 82,
+      "scans": 0,
+      "result": [
+        [
+          "c1",
+          "\u0001key-0"
+        ]
+      ],
+      "plan": [
+        "SEARCH i USING COVERING INDEX items_by_link (link_id=?)",
+        "SEARCH b USING INDEX sqlite_autoindex_bindings_1 (item=? AND source=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "old",
+      "query": "origin",
+      "size": 10000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 43.201374999999985,
+      "ms": 1.2899590000000103,
+      "steps": 110733,
+      "scans": 10063,
+      "result": [
+        [
+          "c0",
+          "real-10001"
+        ]
+      ],
+      "plan": [
+        "SCAN bindings",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "old",
+      "query": "destination",
+      "size": 10000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 20.682583000000022,
+      "ms": 0.6507080000000087,
+      "steps": 60425,
+      "scans": 10063,
+      "result": [
+        [
+          "c1",
+          "\u0001key-0"
+        ]
+      ],
+      "plan": [
+        "SCAN bindings",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "current",
+      "query": "origin",
+      "size": 10000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 0.6307920000000422,
+      "ms": 0.006833000000028733,
+      "steps": 92,
+      "scans": 0,
+      "result": [
+        [
+          "c0",
+          "real-10001"
+        ]
+      ],
+      "plan": [
+        "SEARCH i USING COVERING INDEX items_by_link (link_id=?)",
+        "SEARCH b USING INDEX sqlite_autoindex_bindings_1 (item=? AND source=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "current",
+      "query": "destination",
+      "size": 10000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 0.4359590000000253,
+      "ms": 0.006666999999993095,
+      "steps": 82,
+      "scans": 0,
+      "result": [
+        [
+          "c1",
+          "\u0001key-0"
+        ]
+      ],
+      "plan": [
+        "SEARCH i USING COVERING INDEX items_by_link (link_id=?)",
+        "SEARCH b USING INDEX sqlite_autoindex_bindings_1 (item=? AND source=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "old",
+      "query": "origin",
+      "size": 50000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 223.334875,
+      "ms": 6.885541999999987,
+      "steps": 550733,
+      "scans": 50063,
+      "result": [
+        [
+          "c0",
+          "real-50001"
+        ]
+      ],
+      "plan": [
+        "SCAN bindings",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "old",
+      "query": "destination",
+      "size": 50000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 110.02324999999996,
+      "ms": 3.50974999999994,
+      "steps": 300425,
+      "scans": 50063,
+      "result": [
+        [
+          "c1",
+          "\u0001key-0"
+        ]
+      ],
+      "plan": [
+        "SCAN bindings",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "current",
+      "query": "origin",
+      "size": 50000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 0.4651659999999538,
+      "ms": 0.005874999999832653,
+      "steps": 92,
+      "scans": 0,
+      "result": [
+        [
+          "c0",
+          "real-50001"
+        ]
+      ],
+      "plan": [
+        "SEARCH i USING COVERING INDEX items_by_link (link_id=?)",
+        "SEARCH b USING INDEX sqlite_autoindex_bindings_1 (item=? AND source=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "current",
+      "query": "destination",
+      "size": 50000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 0.43716700000004494,
+      "ms": 0.006457999999838648,
+      "steps": 82,
+      "scans": 0,
+      "result": [
+        [
+          "c1",
+          "\u0001key-0"
+        ]
+      ],
+      "plan": [
+        "SEARCH i USING COVERING INDEX items_by_link (link_id=?)",
+        "SEARCH b USING INDEX sqlite_autoindex_bindings_1 (item=? AND source=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "old",
+      "query": "origin",
+      "size": 200000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 876.3582500000002,
+      "ms": 27.53295900000012,
+      "steps": 2200733,
+      "scans": 200063,
+      "result": [
+        [
+          "c0",
+          "real-200001"
+        ]
+      ],
+      "plan": [
+        "SCAN bindings",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "old",
+      "query": "destination",
+      "size": 200000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 441.76204099999995,
+      "ms": 13.667042000000038,
+      "steps": 1200425,
+      "scans": 200063,
+      "result": [
+        [
+          "c1",
+          "\u0001key-0"
+        ]
+      ],
+      "plan": [
+        "SCAN bindings",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "current",
+      "query": "origin",
+      "size": 200000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 0.3687499999996362,
+      "ms": 0.006250000000363798,
+      "steps": 92,
+      "scans": 0,
+      "result": [
+        [
+          "c0",
+          "real-200001"
+        ]
+      ],
+      "plan": [
+        "SEARCH i USING COVERING INDEX items_by_link (link_id=?)",
+        "SEARCH b USING INDEX sqlite_autoindex_bindings_1 (item=? AND source=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "version": "current",
+      "query": "destination",
+      "size": 200000,
+      "collections": 8,
+      "pending": 32,
+      "batchMs": 0.49645799999962037,
+      "ms": 0.008917000001019915,
+      "steps": 82,
+      "scans": 0,
+      "result": [
+        [
+          "c1",
+          "\u0001key-0"
+        ]
+      ],
+      "plan": [
+        "SEARCH i USING COVERING INDEX items_by_link (link_id=?)",
+        "SEARCH b USING INDEX sqlite_autoindex_bindings_1 (item=? AND source=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    }
+  ]
+}
