@@ -1,10 +1,14 @@
--- Where this source holds a pending create of the identity in another
--- collection, a binding with no base: the destination a Tombstone placement
--- carries, so its remove is a relocation (SYNC.md §3). The create is keyed by
--- the identity or, staged beside a live holder, by the identity minted over the
--- provisional handle it derives, the bare key first; its handle tells which.
--- The counterpart of origin_for_link, read from the same rows.
-SELECT collection, handle FROM bindings
-WHERE (link_id = :link_id OR link_id = 'dup:' || :link_id || '#' || char(1) || :link_id)
-  AND source = :source AND collection != :collection AND base_present = 0
-ORDER BY link_id != :link_id, collection LIMIT 1;
+-- Seek a pending create of the identity or the minted copy in other
+-- collections, bare first. items_by_link finds the candidate placements;
+-- the binding primary key then seeks only this source's binding there.
+WITH hints(link_id) AS (
+    SELECT :link_id
+    UNION
+    SELECT 'dup:' || :link_id || '#' || char(1) || :link_id
+)
+SELECT b.collection, b.handle
+FROM hints h
+JOIN items i INDEXED BY items_by_link ON i.link_id = h.link_id
+JOIN bindings b ON b.collection = i.collection AND b.link_id = i.link_id
+WHERE b.source = :source AND b.collection != :collection AND b.base_present = 0
+ORDER BY b.link_id != :link_id, b.collection LIMIT 1;

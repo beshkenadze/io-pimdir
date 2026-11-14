@@ -1011,3 +1011,12 @@ A write SHALL state, on the mail row of every live, stored item gaining a body (
 
 #### Scenario: A copy of a body held with no mark
 - tests/attachments.rs `a_copy_of_a_body_held_with_no_mark_takes_the_columns_a_walk_gives`: held rows stating neither column and no stand-in, as an older writer left them; a copy guessing the opposite mark takes the walk's mark and invitation, records no stand-in, and the held rows still state neither.
+
+### Requirement: Binding location lookup seeks identity candidates
+Origin and destination lookup SHALL seek only the assigned identity and its
+licensed minted counterpart through the existing item identity and binding
+primary-key indexes, without scanning unrelated bindings. The exact/bare key
+preference, source and current-collection gates, base-presence gates, origin
+body matching, and eligibility of retained origins SHALL remain unchanged.
+Opaque identity bytes, including Unicode and embedded separators, SHALL retain
+the same minted-key matching behavior.

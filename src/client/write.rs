@@ -1831,3 +1831,211 @@ pub(crate) fn put_unbound(
         |row| row.get(0),
     )?)
 }
+
+#[cfg(test)]
+mod binding_location_tests {
+    use super::*;
+    use crate::client::PimdirStore;
+    use alloc::format;
+    use rusqlite::StatementStatus;
+
+    fn seeded(n: usize) -> (tempfile::TempDir, PimdirSourceStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = PimdirStore::open(dir.path()).unwrap().for_source("source");
+        for name in ["bulk", "origin", "destination", "caller"] {
+            store.ensure_collection(name, "message/rfc822").unwrap();
+        }
+        let tx = store.store.reader.conn.transaction().unwrap();
+        {
+            let mut item = tx
+                .prepare("INSERT INTO items(collection,link_id,seq,level) VALUES (?1,?2,?3,1)")
+                .unwrap();
+            let mut binding = tx.prepare("INSERT INTO bindings(collection,link_id,source,handle,base_present) VALUES (?1,?2,'source',?2,?3)").unwrap();
+            for i in 0..n {
+                let key = format!("unrelated-{i:08}");
+                item.execute(rusqlite::params!["bulk", key, i as i64 + 1])
+                    .unwrap();
+                binding.execute(rusqlite::params!["bulk", key, 1]).unwrap();
+            }
+            for (collection, base) in [("origin", 1), ("destination", 0)] {
+                item.execute(rusqlite::params![collection, "needle", n as i64 + 1])
+                    .unwrap();
+                binding
+                    .execute(rusqlite::params![collection, "needle", base])
+                    .unwrap();
+            }
+        }
+        tx.commit().unwrap();
+        (dir, store)
+    }
+
+    #[test]
+    fn binding_location_lookups_are_bounded() {
+        let mut largest = 0;
+        for n in [1_000, 10_000, 50_000] {
+            let (_dir, store) = seeded(n);
+            for (name, query, expected) in [
+                ("origin", sql::ORIGIN_FOR_LINK, "origin"),
+                ("destination", sql::DESTINATION_FOR_LINK, "destination"),
+            ] {
+                let mut stmt = store.store.reader.conn.prepare(query).unwrap();
+                let mut params: Vec<(&str, &dyn ToSql)> = vec![
+                    (":link_id", &"needle"),
+                    (":source", &"source"),
+                    (":collection", &"caller"),
+                ];
+                let object: Option<&str> = None;
+                if name == "origin" {
+                    params.push((":object", &object));
+                }
+                let result: (String, String) = stmt
+                    .query_row(params.as_slice(), |r| Ok((r.get(0)?, r.get(1)?)))
+                    .unwrap();
+                assert_eq!(result, (expected.into(), "needle".into()));
+                let steps = stmt.get_status(StatementStatus::VmStep);
+                std::eprintln!("binding_lookup n={n} query={name} vm_steps={steps}");
+                largest = largest.max(steps);
+            }
+        }
+        assert!(
+            largest < 5_000,
+            "lookup scanned unrelated bindings: {largest} SQLite VM steps"
+        );
+    }
+
+    #[test]
+    fn binding_location_keys_keep_body_source_order_and_retained_semantics() {
+        let (_dir, store) = seeded(0);
+        let conn = &store.store.reader.conn;
+        conn.execute(
+            "INSERT INTO objects(hash,size) VALUES ('body-a',0),('body-b',0)",
+            [],
+        )
+        .unwrap();
+        fn lookup(
+            conn: &Connection,
+            sql: &str,
+            link: &str,
+            object: Option<&str>,
+            current: &str,
+            source: &str,
+        ) -> Option<String> {
+            let mut params: Vec<(&str, &dyn ToSql)> = vec![
+                (":link_id", &link),
+                (":collection", &current),
+                (":source", &source),
+            ];
+            if sql == crate::sql::ORIGIN_FOR_LINK {
+                params.push((":object", &object));
+            }
+            conn.query_row(sql, params.as_slice(), |r| r.get(0))
+                .optional()
+                .unwrap()
+        }
+        for (index, hint) in ["opaque", "a#\u{1}b", "猫😀/identity", "opaque\0suffix"]
+            .into_iter()
+            .enumerate()
+        {
+            let minted = format!("dup:{hint}#\u{1}{hint}");
+            let bare_origin = format!("{index}-origin-bare");
+            let exact_origin = format!("{index}-origin-minted");
+            let bare_destination = format!("{index}-destination-bare");
+            let minted_destination = format!("{index}-destination-minted");
+            let other_source = format!("{index}-other-source");
+            for (collection, link, base, body, source) in [
+                (&bare_origin, hint, 1, Some("body-a"), "source"),
+                (&exact_origin, minted.as_str(), 1, Some("body-b"), "source"),
+                (&bare_destination, hint, 0, None, "source"),
+                (&minted_destination, minted.as_str(), 0, None, "source"),
+                (&other_source, hint, 1, Some("body-a"), "other"),
+            ] {
+                conn.execute(
+                    "INSERT INTO collections(id,kind,name) VALUES (?1,'message/rfc822',?1)",
+                    [collection],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO items(collection,link_id,seq,level) VALUES (?1,?2,1,1)",
+                    rusqlite::params![collection, link],
+                )
+                .unwrap();
+                conn.execute("INSERT INTO bindings(collection,link_id,source,handle,base_present,base_object) VALUES (?1,?2,?3,?1,?4,?5)", rusqlite::params![collection, link, source, base, body]).unwrap();
+            }
+            conn.execute(
+                "UPDATE items SET deleted=1,retained_at='2026-11-14T00:00:00Z' WHERE collection=?1",
+                [&bare_origin],
+            )
+            .unwrap();
+            assert_eq!(
+                lookup(
+                    conn,
+                    sql::ORIGIN_FOR_LINK,
+                    &minted,
+                    None,
+                    "caller",
+                    "source"
+                ),
+                Some(exact_origin.clone())
+            );
+            assert_eq!(
+                lookup(
+                    conn,
+                    sql::ORIGIN_FOR_LINK,
+                    &minted,
+                    Some("body-a"),
+                    "caller",
+                    "source"
+                ),
+                Some(bare_origin.clone())
+            );
+            assert_eq!(
+                lookup(
+                    conn,
+                    sql::ORIGIN_FOR_LINK,
+                    &minted,
+                    None,
+                    &exact_origin,
+                    "source"
+                ),
+                Some(bare_origin.clone())
+            );
+            assert_eq!(
+                lookup(
+                    conn,
+                    sql::ORIGIN_FOR_LINK,
+                    &minted,
+                    Some("missing"),
+                    "caller",
+                    "source"
+                ),
+                None
+            );
+            assert_eq!(
+                lookup(conn, sql::ORIGIN_FOR_LINK, hint, None, "caller", "other"),
+                Some(other_source)
+            );
+            assert_eq!(
+                lookup(
+                    conn,
+                    sql::DESTINATION_FOR_LINK,
+                    hint,
+                    None,
+                    "caller",
+                    "source"
+                ),
+                Some(bare_destination.clone())
+            );
+            assert_eq!(
+                lookup(
+                    conn,
+                    sql::DESTINATION_FOR_LINK,
+                    hint,
+                    None,
+                    &bare_destination,
+                    "source"
+                ),
+                Some(minted_destination)
+            );
+        }
+    }
+}

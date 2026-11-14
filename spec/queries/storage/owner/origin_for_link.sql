@@ -1,10 +1,21 @@
--- Where this source already binds an identity in another collection with the
--- body a copy intends: the origin a Created placement carries, so its push is
--- a server-side copy (SYNC.md §3). A create keyed by an identity minted over
--- the provisional handle it derives pairs with that identity, the bare key
--- first. NULL :object means any body.
-SELECT collection, handle FROM bindings
-WHERE (link_id = :link_id OR 'dup:' || link_id || '#' || char(1) || link_id = :link_id)
-  AND source = :source AND collection != :collection
-  AND base_present = 1 AND (:object IS NULL OR base_object = :object)
-ORDER BY link_id != :link_id, collection LIMIT 1;
+-- Origin matching includes the assigned key and, for a minted copy, the
+-- exact identity it was minted over. Invert the minted form on the parameter,
+-- never on every binding row. Halving its length also handles a bare identity
+-- containing the separator; validate the entire reconstruction before use.
+WITH request(hint) AS (
+    -- Byte lengths preserve opaque identities containing NUL as well as UTF-8.
+    SELECT CAST(substr(CAST(:link_id AS BLOB), 5,
+                       (length(CAST(:link_id AS BLOB)) - 6) / 2) AS TEXT)
+), hints(link_id) AS (
+    SELECT :link_id
+    UNION
+    SELECT hint FROM request
+    WHERE :link_id = 'dup:' || hint || '#' || char(1) || hint
+)
+SELECT b.collection, b.handle
+FROM hints h
+JOIN items i INDEXED BY items_by_link ON i.link_id = h.link_id
+JOIN bindings b ON b.collection = i.collection AND b.link_id = i.link_id
+WHERE b.source = :source AND b.collection != :collection AND b.base_present = 1
+  AND (:object IS NULL OR b.base_object = :object)
+ORDER BY b.link_id != :link_id, b.collection LIMIT 1;
